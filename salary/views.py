@@ -151,34 +151,47 @@ def findunique(ls, op, file, folder_name):
 
 from zipfile import BadZipFile
 
-async def process_file(uploaded_file, data, dfs, folder_name):
+async def process_file(uploaded_file, data, dfs, folder_name, request):
     fileName = uploaded_file.name
+
+    # 1. Save resume in /media/resumes/ and generate public URL
+    resume_link = save_resume_locally(uploaded_file, request)
+
     try:
+        # 2. Extract content from resume
         if fileName.endswith(".pdf"):
             op = await extract_pdf_data(uploaded_file)
-            data.extend(findunique(data, op, fileName, folder_name))
 
         elif fileName.endswith(".docx") or fileName.endswith(".doc"):
             op = await extract_text_from_docx(uploaded_file)
-            data.extend(findunique(data, op, fileName, folder_name))
 
         elif fileName.endswith(".xlsx"):
             df = await read_excel(uploaded_file)
             dfs.append(df)
+            return
+
         else:
             print(f"Unsupported file format: {fileName}")
+            return
 
-    except BadZipFile as e:
-        print(f"BadZipFile error for file '{fileName}': {str(e)}")
-        # Handle the error or log it as per your application's requirements
+        # 3. Add Resume_link ONLY once
+        op[0]["Resume_Link"] = resume_link
+
+        # 4. Insert final record into output list
+        data.extend(findunique(data, op, fileName, folder_name))
+
     except Exception as e:
         print(f"Error processing file '{fileName}': {str(e)}")
-        # Handle the error or log it as per your application's requirements
+
 
 
 async def read_excel(file):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, pd.read_excel, file)
+
+
+
+
 
 # @timecalculator
 async def process_salary(request):
@@ -194,7 +207,7 @@ async def process_salary(request):
         tasks = []
 
         for uploaded_file in uploaded_files:
-            tasks.append(process_file(uploaded_file, data, dfs, folder_name))
+            tasks.append(process_file(uploaded_file, data, dfs, folder_name, request))
 
         await asyncio.gather(*tasks)
 
@@ -202,8 +215,16 @@ async def process_salary(request):
         try:
             if data:
                 df = pd.DataFrame(data)
+
+                # 🔥 Convert Resume_Link to a clickable hyperlink
+                if "Resume_Link" in df.columns:
+                    df["Resume_Link"] = df["Resume_Link"].apply(
+                        lambda x: f'=HYPERLINK("{x}", "Open Resume")'
+                    )
+
                 excel_file = f'{folder_name}_employee_resumes_data.xlsx'
                 df.to_excel(excel_file, index=False)
+
             elif dfs:
                 merged_df = pd.concat(dfs, ignore_index=True)
                 merged_df = merged_df.drop_duplicates(subset=['Email_id'])
@@ -225,19 +246,25 @@ async def process_salary(request):
 
 
 
+from django.conf import settings
+from django.core.files.storage import FileSystemStorage
+import os
 
+def save_resume_locally(uploaded_file, request):
+    from django.conf import settings
+    from django.core.files.storage import FileSystemStorage
+    import os
 
+    # Create folder /media/resumes/
+    resume_folder = os.path.join(settings.MEDIA_ROOT, "resumes")
+    os.makedirs(resume_folder, exist_ok=True)
 
+    # Save file
+    fs = FileSystemStorage(location=resume_folder)
+    filename = fs.save(uploaded_file.name, uploaded_file)
 
+    # Build full absolute URL
+    file_url = request.build_absolute_uri(settings.MEDIA_URL + "resumes/" + filename)
 
-
-
-
-
-
-
-
-
-
-
+    return file_url
 

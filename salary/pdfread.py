@@ -434,6 +434,7 @@ def extract_info(data):
     experience_pattern = r'\b(\d+(?:\.\d+)?\+?)\s+years'
     clients_pattern = r"(organization|company|employer|clients|client|projects|worked for)\s*:\s*(.+)"
     skills_pattern = r'\b(?:' + '|'.join(map(re.escape, technologies)) + r')\b'
+    
 
     phone_flag = False
     email_flag = False
